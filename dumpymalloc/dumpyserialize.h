@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdio.h>
 
 enum DumpyCall {
     ALIGNED_ALLOC = 1,
@@ -42,4 +43,85 @@ void readsize(size_t* out, FILE* in) {
 
 void readptr(void** out, FILE* in) {
     fread(out, sizeof(void*), 1, in);
+}
+
+typedef struct DumpyFuncs {
+    void (*aligned_alloc)(size_t, size_t, void*);
+    void (*calloc)(size_t, size_t, void*);
+    void (*free)(void*);
+    void (*malloc)(size_t, void*);
+    void (*memalign)(size_t, size_t, void*);
+    void (*realloc)(void*, size_t, void*);
+} DumpyFuncs;
+
+void dumpyread(FILE* in, DumpyFuncs funcs) {
+    while (1) {
+        int kind = fgetc(in);
+        if (kind == EOF) {
+            break;
+        }
+
+        switch (kind) {
+            case ALIGNED_ALLOC: {
+                size_t alignment;
+                size_t size;
+                void* p;
+                readsize(&alignment, in);
+                readsize(&size, in);
+                readptr(&p, in);
+                if (funcs.aligned_alloc) {
+                    funcs.aligned_alloc(alignment, size, p);
+                }
+            } break;
+            case CALLOC: {
+                size_t num;
+                size_t size;
+                void* p;
+                readsize(&num, in);
+                readsize(&size, in);
+                readptr(&p, in);
+                if (funcs.calloc) {
+                    funcs.calloc(num, size, p);
+                }
+            } break;
+            case FREE: {
+                void* addr;
+                readptr(&addr, in);
+                if (funcs.free) {
+                    funcs.free(addr);
+                }
+            } break;
+            case MALLOC: {
+                size_t size;
+                void* p;
+                readsize(&size, in);
+                readptr(&p, in);
+                if (funcs.malloc) {
+                    funcs.malloc(size, p);
+                }
+            } break;
+            case MEMALIGN: {
+                size_t alignment;
+                size_t size;
+                void* p;
+                readsize(&alignment, in);
+                readsize(&size, in);
+                readptr(&p, in);
+                if (funcs.memalign) {
+                    funcs.memalign(alignment, size, p);
+                }
+            } break;
+            case REALLOC: {
+                void* ptr;
+                size_t new_size;
+                void* p;
+                readptr(&ptr, in);
+                readsize(&new_size, in);
+                readptr(&p, in);
+                if (funcs.realloc) {
+                    funcs.realloc(ptr, new_size, p);
+                }
+            } break;
+        }
+    }
 }
