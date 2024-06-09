@@ -3,3 +3,4 @@ a.out
 *.so
 *.syms.txt
 dumpydump-*
+dumpytext

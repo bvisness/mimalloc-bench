@@ -2,17 +2,18 @@
 
 #include <dlfcn.h>
 #include <errno.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+
+#include "dumpyserialize.h"
 
 static void* (*real_aligned_alloc)(size_t, size_t) = NULL;
 static void* (*real_calloc)(size_t, size_t) = NULL;
 static void (*real_free)(void*) = NULL;
 static void* (*real_malloc)(size_t) = NULL;
 static void* (*real_memalign)(size_t, size_t) = NULL;
-static int (*real_posix_memalign)(void**, size_t, size_t) = NULL;
+// static int (*real_posix_memalign)(void**, size_t, size_t) = NULL;
 static void* (*real_realloc)(void*, size_t) = NULL;
 
 #define DUMPY_LOAD(name) \
@@ -31,7 +32,7 @@ static void dumpy_init(void) {
     DUMPY_LOAD(free);
     DUMPY_LOAD(malloc);
     DUMPY_LOAD(memalign);
-    DUMPY_LOAD(posix_memalign);
+    // DUMPY_LOAD(posix_memalign);
     DUMPY_LOAD(realloc);
 
     char filename[1024];
@@ -44,40 +45,6 @@ static void dumpy_init(void) {
 }
 
 #define DUMPY_INIT(thing) if (!real_##thing) { dumpy_init(); }
-
-enum DumpyCall {
-    ALIGNED_ALLOC = 1,
-    CALLOC = 2,
-    FREE = 3,
-    MALLOC = 4,
-    MEMALIGN = 5,
-    POSIX_MEMALIGN = 6,
-    REALLOC = 7,
-};
-
-void writechar(char n, FILE* out) {
-    if (!out) return;
-    uint8_t n8 = (uint8_t)n;
-    fwrite(&n8, sizeof(uint8_t), 1, out);
-}
-
-void write32(int n, FILE* out) {
-    if (!out) return;
-    uint32_t n64 = (uint32_t)n;
-    fwrite(&n64, sizeof(uint32_t), 1, out);
-}
-
-void writesize(size_t n, FILE* out) {
-    if (!out) return;
-    uint64_t n64 = (uint64_t)n;
-    fwrite(&n64, sizeof(uint64_t), 1, out);
-}
-
-void writeptr(void* p, FILE* out) {
-    if (!out) return;
-    uint64_t p64 = (uint64_t)p;
-    fwrite(&p64, sizeof(uint64_t), 1, out);
-}
 
 void *aligned_alloc(size_t alignment, size_t size) {
     DUMPY_INIT(aligned_alloc);
@@ -109,8 +76,6 @@ void free(void* addr) {
     writeptr(addr, out);
 }
 
-char buf[1024];
-
 void* malloc(size_t size) {
     DUMPY_INIT(malloc);
 
@@ -132,17 +97,17 @@ void* memalign(size_t alignment, size_t size) {
     return p;
 }
 
-int posix_memalign(void **memptr, size_t alignment, size_t size) {
-    DUMPY_INIT(posix_memalign);
+// int posix_memalign(void **memptr, size_t alignment, size_t size) {
+//     DUMPY_INIT(posix_memalign);
 
-    writechar(POSIX_MEMALIGN, out);
-    int n = real_posix_memalign(memptr, alignment, size);
-    writeptr(memptr, out);
-    writesize(alignment, out);
-    writesize(size, out);
-    write32(n, out);
-    return n;
-}
+//     writechar(POSIX_MEMALIGN, out);
+//     int n = real_posix_memalign(memptr, alignment, size);
+//     writeptr(memptr, out);
+//     writesize(alignment, out);
+//     writesize(size, out);
+//     write32(n, out);
+//     return n;
+// }
 
 void* realloc(void* ptr, size_t new_size) {
     DUMPY_INIT(realloc);
