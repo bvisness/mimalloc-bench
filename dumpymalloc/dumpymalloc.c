@@ -1,7 +1,11 @@
 #define _GNU_SOURCE
 
 #include <dlfcn.h>
+#include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 static void* (*real_aligned_alloc)(size_t, size_t) = NULL;
 static void* (*real_calloc)(size_t, size_t) = NULL;
@@ -17,7 +21,9 @@ static void* (*real_realloc)(void*, size_t) = NULL;
         fprintf(stderr, "Error in `dlsym`: %s\n", dlerror()); \
     }
 
-int dumpy_initialized = 0;
+#define OUTBUF_SIZE 2048
+FILE* out = NULL;
+char outbuf[OUTBUF_SIZE];
 
 static void dumpy_init(void) {
     DUMPY_LOAD(aligned_alloc);
@@ -28,62 +34,123 @@ static void dumpy_init(void) {
     DUMPY_LOAD(posix_memalign);
     DUMPY_LOAD(realloc);
 
-    dumpy_initialized = 1;
+    char filename[1024];
+    sprintf(filename, "dumpydump-%d", getpid());
+    out = fopen(filename, "w");
+    if (!out) {
+        fprintf(stderr, "Failed to open file: %d\n", errno);
+    }
+    setvbuf(out, outbuf, _IOFBF, OUTBUF_SIZE);
 }
 
-#define DUMPY_INIT() if (!dumpy_initialized) { dumpy_init(); }
+#define DUMPY_INIT(thing) if (!real_##thing) { dumpy_init(); }
+
+enum DumpyCall {
+    ALIGNED_ALLOC = 1,
+    CALLOC = 2,
+    FREE = 3,
+    MALLOC = 4,
+    MEMALIGN = 5,
+    POSIX_MEMALIGN = 6,
+    REALLOC = 7,
+};
+
+void writechar(char n, FILE* out) {
+    if (!out) return;
+    uint8_t n8 = (uint8_t)n;
+    fwrite(&n8, sizeof(uint8_t), 1, out);
+}
+
+void write32(int n, FILE* out) {
+    if (!out) return;
+    uint32_t n64 = (uint32_t)n;
+    fwrite(&n64, sizeof(uint32_t), 1, out);
+}
+
+void writesize(size_t n, FILE* out) {
+    if (!out) return;
+    uint64_t n64 = (uint64_t)n;
+    fwrite(&n64, sizeof(uint64_t), 1, out);
+}
+
+void writeptr(void* p, FILE* out) {
+    if (!out) return;
+    uint64_t p64 = (uint64_t)p;
+    fwrite(&p64, sizeof(uint64_t), 1, out);
+}
 
 void *aligned_alloc(size_t alignment, size_t size) {
-    DUMPY_INIT();
+    DUMPY_INIT(aligned_alloc);
 
+    writechar(ALIGNED_ALLOC, out);
     void* p = real_aligned_alloc(alignment, size);
-    fprintf(stderr, "aligned_alloc(alignment=%ld, size=%ld) = %p\n", alignment, size, p);
+    writesize(alignment, out);
+    writesize(size, out);
+    writeptr(p, out);
     return p;
 }
 
 void* calloc(size_t num, size_t size) {
-    DUMPY_INIT();
+    DUMPY_INIT(calloc);
 
+    writechar(CALLOC, out);
     void* p = real_calloc(num, size);
-    fprintf(stderr, "calloc(num=%ld, size=%ld) = %p\n", num, size, p);
+    writesize(num, out);
+    writesize(size, out);
+    writeptr(p, out);
     return p;
 }
 
 void free(void* addr) {
-    DUMPY_INIT();
+    DUMPY_INIT(free);
 
-    fprintf(stderr, "free(%p)\n", addr);
+    writechar(FREE, out);
     real_free(addr);
+    writeptr(addr, out);
 }
 
-void* malloc(size_t size) {
-    DUMPY_INIT();
+char buf[1024];
 
+void* malloc(size_t size) {
+    DUMPY_INIT(malloc);
+
+    writechar(MALLOC, out);
     void* p = real_malloc(size);
-    fprintf(stderr, "malloc(%ld) = %p\n", size, p);
+    writesize(size, out);
+    writeptr(p, out);
     return p;
 }
 
 void* memalign(size_t alignment, size_t size) {
-    DUMPY_INIT();
+    DUMPY_INIT(memalign);
 
+    writechar(MEMALIGN, out);
     void* p = real_memalign(alignment, size);
-    fprintf(stderr, "memalign(alignment=%ld, size=%ld) = %p\n", alignment, size, p);
+    writesize(alignment, out);
+    writesize(size, out);
+    writeptr(p, out);
     return p;
 }
 
 int posix_memalign(void **memptr, size_t alignment, size_t size) {
-    DUMPY_INIT();
+    DUMPY_INIT(posix_memalign);
 
+    writechar(POSIX_MEMALIGN, out);
     int n = real_posix_memalign(memptr, alignment, size);
-    fprintf(stderr, "posix_memalign(memptr=%p, alignment=%ld, size=%ld) = %d\n", memptr, alignment, size, n);
+    writeptr(memptr, out);
+    writesize(alignment, out);
+    writesize(size, out);
+    write32(n, out);
     return n;
 }
 
 void* realloc(void* ptr, size_t new_size) {
-    DUMPY_INIT();
+    DUMPY_INIT(realloc);
 
+    writechar(REALLOC, out);
     void* p = real_realloc(ptr, new_size);
-    fprintf(stderr, "realloc(ptr=%p, new_size=%ld) = %p\n", ptr, new_size, p);
+    writeptr(ptr, out);
+    writesize(new_size, out);
+    writeptr(p, out);
     return p;
 }
